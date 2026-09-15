@@ -1,6 +1,6 @@
-# HTML, SVG and Dasy
+# What is Dasy?
 
-The `dasy()` function and the `html` template literal were created to make rendering data-driven HTML pages in the browser easier and simpler (it is like a lightweight React replacement).
+The `dasy()` function and the `html`/`svg` template literals were created to make rendering dynamic data-driven HTML pages in the browser easier and simpler (it is like a lightweight React/Redux replacement).
 
 **Please check the live demo collection to understand what is it good for!**
 
@@ -68,7 +68,7 @@ button.addEventListener('click', () =>
 ```
 There are, of course, simpler solutions, but they either require translation or are extremely cumbersome to use.
 
-**In contrast, `html` offers a simple, fast, and runtime-friendly way to mix HTML text and events:**
+**In contrast, `html` offers a simple, fast way to mix HTML text and events (without precompile!):**
 ```js
 const msg = 'Alert!';
 document.body.append(html`<button class="demo-button" onClick="${() => alert(msg)}">Alert</button>`);
@@ -98,8 +98,9 @@ The DOM produced by the `html` function can have multiple roots:
 ```js
 html`<i>A</i><b>B</b>`;
 ```
-```
-There are attributes that are much better set after the children have been created. A good example is `value` on a select. It is applied during parsing before the `option`s exist, so it has no effect. Here, `psValue` means that the attribute is actually only written at the `</select>`, so the `select` is correctly set to the intended value.
+
+There are attributes that are much better set after the children have been created. A good example is `value` on a select. It is applied during parsing before the `option`'s exist, so it has no effect. Here, `psValue` means that the attribute is actually only written at the `</select>`, so the `select` is correctly set to the intended value.
+
 ```js
 html`<select psValue="2">
   <option value="1">One</option>
@@ -130,7 +131,9 @@ import { dasy } from './js/dasy.mjs';
 
 // …
 
-control = dasy({ data: { counter: { value: 0 } }, container: document.body }, 
+const data = { counter: { value: 0 } };
+
+control = dasy({ data, container: document.body }, 
   // This is the template function for the provided data. The root is the context
   // which contains multiple methods for the context. Inside the dasy, the html 
   // literal must be accessed through the context!
@@ -158,7 +161,23 @@ dasy() is a function that expects a `data` object, a `container` object, and a t
 - `container` will hold the rendered template.
 - Every template function has two parameters by default:
   - In the root template, `rootData` always matches the `data` object passed in as the argument.
-  - `rootContext` a special object, whose `use`, `inspect` and `html` method we use in the example.
+  - `rootContext` a special object, whose `use`, `inspect`, `each`, and `html` methods we use in the example.
+
+**Destructured context:** You can destructure any method from either parameter:
+
+```js
+dasy({ data, container }, (_, { html, each }) => 
+  html`<ul>${each('.items', (_, item) => item.html`<li>...</li>`)}</ul>`)
+```
+
+**Constructor options — `beforeRefresh`:** The constructor accepts a `beforeRefresh(data)` callback that runs before every diff computation. This is useful for derived data or computed views:
+
+```js
+dasy({ 
+  data, container, 
+  beforeRefresh: () => { /* compute derived state */ }
+}, (_, root) => …);
+```
 
 **What is `use` good for?**
 
@@ -166,7 +185,7 @@ dasy() is a function that expects a `data` object, a `container` object, and a t
 
 In the example, pressing the button increments `data.counter.value`, and then we ask the whole dasy instance to refresh itself. dasy then figures out which template part inside the `use` is affected, and rebuilds only that part.
 
-The `counterData` variable in the example is the relevant part of the original JSON object, sliced out by the `.counter` path, which here is `{ value: 0 }`. In the root template `roorData` and `data` are the same, but in a nested `use()`/`each()` callback `counterData` is the selected slice.
+The `counterData` variable in the example is the relevant part of the original JSON object, sliced out by the `.counter` path, which here is `{ value: 0 }`. In the root template `rootData` and `data` are the same, but in a nested `use()`/`each()` callback `counterData` is the selected slice.
 
 **What is `inspect` good for?**
 
@@ -217,7 +236,16 @@ const oPage = dasy({ data, container: document.body }, (_, root) => root.html`
 **What do we see here?**
 
 - `(_, root)` swallows the template data object; we do not need it, because we can access it through the original `data` variable.
-- `root.for` works similarly to `root.use`, but the object addressed by the path must be an array, and the template is rendered for every array element.
+- `root.each` works similarly to `root.use`, but the object addressed by the path must be an array, and the template is rendered for every array element.
+- Each array item can also have its own context with nested `html`/`svg`:
+
+```js
+dasy({ data, container: document.body }, (_, root) => 
+  root.html`<ul>${root.each('.items', ($item, ctx) => 
+    ctx.html`<li>Name: ${ctx.use('name', $ => $.value)}</li>`
+  )}</ul>`)
+```
+
 - The inner `row.each` does not contain a path, because it uses the parent data directly (it would be equivalent to calling `row.each('', ($, cell) => … )`).
 - The `cell.set` shorthand is actually equivalent to this: `e => cell.set(e)`, which is in fact this: `e => cell.set('', e)`. And that is equivalent to this: `e => set('', e.target.value)`.
 - `set` really just writes the value back into the data and calls `dasy.refresh()`. Obviously, if multiple fields change at once, that is not economical, and it is better to call `refresh()` separately, as you can also see with the buttons.
@@ -234,7 +262,15 @@ const oPage = dasy({ data, container: document.body }, (_, root) => root.html`
 root.use('.counters', ($, outer) => outer.html`
   <p>Outer: <b>${$.first}</b></p>
   <p>Inner: <b>${outer.use('.second', $ => $.value)}</b></p>
-`)`
+`)
+```
+
+**Context-level `refresh()`:** Every context also exposes a `.refresh()` method, so you can trigger updates from any nesting level without referencing the outer variable. You can destructure it directly in your callback:
+
+```js
+root.each('.items', (_, { html, refresh }) => 
+  html`<button onClick="${() => { data.items[0].value++; refresh(); }}">Update</button>`
+)
 ```
 
 ## Destroying a dasy instance

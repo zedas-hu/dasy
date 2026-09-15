@@ -1,17 +1,18 @@
-import { applyDiffs, diffDeep, JSONPath, getByPath, setByPath, assertNoReferenceRedundancies, type DiffEntry, JSONUndoBuffer } from './json_tools.mjs';
+import { applyDiffs, diffDeep, JSONPath, getByPath, setByPath, assertNoReferenceRedundancies, 
+    type DiffEntry, JSONUndoBuffer, type DiffKind } from './json_tools.mjs';
 import { html, svg, type HTMLAttributeValue, type TemplateParams } from './html.mjs';
 
 type DasyPathArgument = JSONPath | string;
-type DasyDiffKind = DiffEntry[1];
-type DasyDiffEntry = DiffEntry;
 type DasyWatcherKind = 'each' | 'use' | 'inspect' | 'item';
 
-type DasyTemplateResult = Node | HTMLAttributeValue | null | undefined | boolean | readonly DasyTemplateResult[];
+type DasyTemplateResult = Node | HTMLAttributeValue;
 type DasyTemplateContext = {
-    each(path: DasyPathArgument | DasyTemplateFunction, template?: DasyTemplateFunction, 
-        emptyTemplate?: DasyTemplateFunction): (parent: Element, params: TemplateParams) => DocumentFragment;
-    use(path: DasyPathArgument, template: DasyTemplateFunction): (parent: Element | Attr, params: TemplateParams) => DasyTemplateResult;
-    inspect(path: DasyPathArgument, template: DasyTemplateFunction): (parent: Element | Attr, params: TemplateParams) => DasyTemplateResult;
+    each(path: DasyPathArgument, template: DasyTemplateFunction, emptyTemplate?: DasyTemplateFunction): 
+        (parent: Element, params: TemplateParams) => DocumentFragment;
+    use(path: DasyPathArgument, template: DasyTemplateFunction): 
+        (parent: Element | Attr, params: TemplateParams) => DasyTemplateResult;
+    inspect(path: DasyPathArgument, template: DasyTemplateFunction): 
+        (parent: Element | Attr, params: TemplateParams) => DasyTemplateResult;
     set(path: DasyPathArgument | unknown, value?: unknown): void;
     html(chunks: TemplateStringsArray, ...values: unknown[]): DocumentFragment;
     svg(chunks: TemplateStringsArray, ...values: unknown[]): DocumentFragment;
@@ -50,9 +51,9 @@ type DasyDataSourceSubscriber = {
  * Shared data source for multiple Dasy instances.
  *
  * Owns the data model, its backup, and the diff computation.
- * Dasy instances subscribe with a JSONPath scope; on refresh()
+ * Dasy instances subscribe with an optional JSONPath filter; on refresh()
  * the source computes one diff for the whole data, then forwards
- * the relevant, scope-relative diff entries to each subscriber.
+ * the relevant full-data diff entries to each subscriber.
  */
 class DasyDataSource {
     #data: object;
@@ -70,7 +71,7 @@ class DasyDataSource {
     }
 
     /**
-     * Registers a Dasy subscriber at the given JSONPath scope.
+        * Registers a Dasy subscriber with an optional JSONPath filter.
      * Returns an unsubscribe function.
      */
     subscribe(dasy: Dasy, path: JSONPath | undefined, beforeRefresh?: (data: object) => void): () => void {
@@ -81,13 +82,12 @@ class DasyDataSource {
 
     /**
      * Recomputes the diff for the whole shared data, notifies every
-     * subscriber's beforeRefresh, then forwards scope-relative diffs.
+        * subscriber's beforeRefresh, then forwards filtered full-data diffs.
      * The backup is updated after the subscribers have been notified.
      */
     refresh(): void {
         for (const oSubscriber of this.#subscribers) {
-            const scopedData = oSubscriber.basePath ? getByPath(this.#data, oSubscriber.basePath) : this.#data;
-            oSubscriber.beforeRefresh?.(scopedData);
+            oSubscriber.beforeRefresh?.(this.#data);
         }
 
         const diffs = diffDeep(this.#backup as object, this.#data);
@@ -123,9 +123,9 @@ class DasyWatcher {
     templateAPI: DasyTemplateContext | undefined = undefined; // Functions which are available in the template function
     kind: DasyWatcherKind = 'use';
     children: DasyWatcher[] | undefined = undefined; // Owned watcher subtree
-    timedAttributes: Array<{ attr: Attr, ownerElement: Element }> | undefined = undefined;
+    timedAttributes: Array<{ attr: Attr, ownerElement: Element }> | undefined = undefined; // ps* attribute collection
     emptyTemplate: DasyTemplateFunction | undefined = undefined; // Template rendered when a 'each' array is empty
-    controller: AbortController;
+    controller: AbortController; // Used to erase events if the watcher is destroyed
 
     constructor(oParams: DasyWatcherParams) {
         Object.assign(this, oParams);
@@ -395,8 +395,7 @@ class DasyWatcher {
 type DasyRootParams = {
     data?: object; // JSON object for the dasy's data source
     dataSource?: DasyDataSource; // shared data source
-    dataPath?: DasyPathArgument; // JSONPath scope inside the shared data (if not specified, then the whole data used)
-    // The dataPath only used when dataSource is present, to filter uneccessary changes received by the Dasy.
+    dataPath?: DasyPathArgument; // Optional JSONPath scope inside the shared data for filtering notifications
     container: HTMLElement; // DOM container of the dasy DOM output
     beforeRefresh?: (data: object) => void; // called before each refresh pass
     afterRefresh?: (data: object) => void; // called after each refresh pass
@@ -438,7 +437,7 @@ class Dasy {
         let data: object;
         if ('dataSource' in oParams) {
             const path = oParams.dataPath ? new JSONPath(oParams.dataPath) : undefined; // Ensure if it is a JSONPath
-            data = path ? getByPath(oParams.dataSource!.data, path) : oParams.dataSource!.data;
+            data = oParams.dataSource!.data;
             this.#dataSource = oParams.dataSource;
             this.#unsubscribe = oParams.dataSource!.subscribe(this, path, oParams.beforeRefresh);
         } else if ('data' in oParams) {
@@ -594,7 +593,7 @@ class Dasy {
     applyAttributeBindingValue(oAttr: Attr, vValue: unknown, ownerElement = oAttr.ownerElement ?? undefined) {
         if (vValue === undefined || vValue === null) {
             if (ownerElement && ownerElement.namespaceURI !== 'http://www.w3.org/2000/svg') {
-                const properties = (ownerElement as unknown) as Record<string, unknown>;
+                const properties = ownerElement as unknown as Record<string, unknown>;
                 properties[oAttr.name] = typeof properties[oAttr.name] === 'boolean' ? false : '';
             }
             ownerElement?.removeAttribute(oAttr.name);
@@ -605,7 +604,7 @@ class Dasy {
         const sValue = String(vValue);
         oAttr.value = sValue;
         if (ownerElement && ownerElement.namespaceURI !== 'http://www.w3.org/2000/svg')
-            ((ownerElement as unknown) as Record<string, string>)[oAttr.name] = sValue;
+            (ownerElement as unknown as Record<string, string>)[oAttr.name] = sValue;
     };
 
     /**
@@ -655,7 +654,7 @@ class Dasy {
      * the [.items] del start decreases to 1, because the [1] index
      * was before the del.
      */
-    #collectStructuralArrayRebuildStarts(aDiffs: DasyDiffEntry[]): Map<string, number> {
+    #collectStructuralArrayRebuildStarts(aDiffs: DiffEntry[]): Map<string, number> {
         const arrayDiffs: { key: string; path: JSONPath; start: number }[] = [];
         for (const [path, type, key] of aDiffs)
             if (type === 'ins' || type === 'del')
@@ -687,7 +686,7 @@ class Dasy {
      *   because value changes affect the content.
      * If the first group is empty, chooses from the other.
      */
-    #selectWatchersForDiff(aWatchersAtPath: DasyWatcher[], sType: DasyDiffKind): DasyWatcher[] {
+    #selectWatchersForDiff(aWatchersAtPath: DasyWatcher[], sType: DiffKind): DasyWatcher[] {
         if ((sType === 'ins' || sType === 'del' || sType === 'val') && aWatchersAtPath.some(watcher => watcher.kind === 'each'))
             return aWatchersAtPath.filter(watcher => watcher.kind !== 'item');
         const preferredKind: DasyWatcherKind = sType === 'ins' || sType === 'del' ? 'each' : 'use';
@@ -728,7 +727,7 @@ class Dasy {
      * Applies the given diffs to the DOM tree without touching the backup.
      * Used both by the local refresh path and by data-source subscribers.
      */
-    #syncDiffsToDOM(aDiffs: DasyDiffEntry[]): void {
+    #syncDiffsToDOM(aDiffs: DiffEntry[]): void {
         const arrayRebuildStarts = this.#collectStructuralArrayRebuildStarts(aDiffs);
         const updatedInspectWatchers = new Set<DasyWatcher>();
         aDiffs.forEach(([path, type, key, value]) => {
@@ -758,15 +757,15 @@ class Dasy {
      * Syncs DOM changes and replays the same diffs onto the local backup.
      * Only used when the Dasy owns its own data and backup.
      */
-    #applyDiffsAndSync(aDiffs: DasyDiffEntry[]): void {
+    #applyDiffsAndSync(aDiffs: DiffEntry[]): void {
         this.#syncDiffsToDOM(aDiffs);
         this.#backup = applyDiffs(this.#backup as object, aDiffs).target;
     }
 
     /**
-     * Entry point used by DasyDataSource to deliver scope-relative diffs.
+    * Entry point used by DasyDataSource to deliver filtered full-data diffs.
      */
-    receiveDiffs(aDiffs: DasyDiffEntry[]): void {
+    receiveDiffs(aDiffs: DiffEntry[]): void {
         assertNoReferenceRedundancies(this.data, 'dasy data');
         this.#syncDiffsToDOM(aDiffs);
         this.#afterRefresh?.(this.data);

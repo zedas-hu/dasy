@@ -3,14 +3,25 @@
   "version": "1.0.3",
   "description": "Lightweight React replacement",
   "type": "module",
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2"
+  },
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
-      "types": "./dist/dasy.d.ts",
+      "types": "./dist/dasy.d.mts",
       "import": "./dist/dasy.mjs"
     }
   },
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && bun build --bundle --minify --target=browser source/dasy.mts --outfile dist/dasy.mjs && npm run types",
+    "watch": "tsc -w -p tsconfig.json",
+    "types": "tsc -p tsconfig.types.json && node dasy-types.mjs",
+    "test": "bun test test"
+  }
 }

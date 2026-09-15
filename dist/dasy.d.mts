@@ -309,11 +309,10 @@ declare function html(chunks: TemplateStringsArray, ...values: unknown[]): Docum
 declare function svg(params: TemplateParams): HTMLTemplateFunction;
 declare function svg(chunks: TemplateStringsArray, ...values: unknown[]): DocumentFragment;
 type DasyPathArgument = JSONPath | string;
-type DasyDiffEntry = DiffEntry;
 type DasyWatcherKind = 'each' | 'use' | 'inspect' | 'item';
-type DasyTemplateResult = Node | HTMLAttributeValue | null | undefined | boolean | readonly DasyTemplateResult[];
+type DasyTemplateResult = Node | HTMLAttributeValue;
 type DasyTemplateContext = {
-    each(path: DasyPathArgument | DasyTemplateFunction, template?: DasyTemplateFunction, emptyTemplate?: DasyTemplateFunction): (parent: Element, params: TemplateParams) => DocumentFragment;
+    each(path: DasyPathArgument, template: DasyTemplateFunction, emptyTemplate?: DasyTemplateFunction): (parent: Element, params: TemplateParams) => DocumentFragment;
     use(path: DasyPathArgument, template: DasyTemplateFunction): (parent: Element | Attr, params: TemplateParams) => DasyTemplateResult;
     inspect(path: DasyPathArgument, template: DasyTemplateFunction): (parent: Element | Attr, params: TemplateParams) => DasyTemplateResult;
     set(path: DasyPathArgument | unknown, value?: unknown): void;
@@ -337,22 +336,22 @@ type DasyWatcherParams = {
  * Shared data source for multiple Dasy instances.
  *
  * Owns the data model, its backup, and the diff computation.
- * Dasy instances subscribe with a JSONPath scope; on refresh()
+ * Dasy instances subscribe with an optional JSONPath filter; on refresh()
  * the source computes one diff for the whole data, then forwards
- * the relevant, scope-relative diff entries to each subscriber.
+ * the relevant full-data diff entries to each subscriber.
  */
 declare class DasyDataSource {
     #private;
     constructor(data: object);
     get data(): object;
     /**
-     * Registers a Dasy subscriber at the given JSONPath scope.
+        * Registers a Dasy subscriber with an optional JSONPath filter.
      * Returns an unsubscribe function.
      */
     subscribe(dasy: Dasy, path: JSONPath | undefined, beforeRefresh?: (data: object) => void): () => void;
     /**
      * Recomputes the diff for the whole shared data, notifies every
-     * subscriber's beforeRefresh, then forwards scope-relative diffs.
+        * subscriber's beforeRefresh, then forwards filtered full-data diffs.
      * The backup is updated after the subscribers have been notified.
      */
     refresh(): void;
@@ -528,9 +527,9 @@ declare class Dasy {
     removeWatcher(oWatcher: DasyWatcher): void;
     applyAttributeBindingValue(oAttr: Attr, vValue: unknown, ownerElement?: Element | undefined): void;
     /**
-     * Entry point used by DasyDataSource to deliver scope-relative diffs.
+    * Entry point used by DasyDataSource to deliver filtered full-data diffs.
      */
-    receiveDiffs(aDiffs: DasyDiffEntry[]): void;
+    receiveDiffs(aDiffs: DiffEntry[]): void;
     /**
      * Top-level update method.
      *
