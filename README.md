@@ -4,7 +4,7 @@ The `dasy()` function and the `html`/`svg` template literals were created to mak
 
 **Please check the live demo collection to understand what is it good for!**
 
-[Example demo collection](https://zedas74.github.io/dasy/examples/examples.html#ex_html)
+[Example demo collection](https://zedas-hu.github.io/dasy/examples/examples.html#ex_html)
 
 (If you are not familiar with template literals, [you can find an explanation here](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals))
 
@@ -12,9 +12,9 @@ The `dasy()` function and the `html`/`svg` template literals were created to mak
 
 First install the package from NPM:
 
-`npm install @zedas74/dasy`
+`npm install @zedas-hu/dasy`
 
-Then, copy the `node_modules\@zedas74\dasy\dist\dasy.mjs` file to a location accessible by your client-side HTML (e.g. a static js folder).
+Then, copy the `node_modules\@zedas-hu\dasy\dist\dasy.mjs` file to a location accessible by your client-side HTML (e.g. a static js folder).
 
 Finally, include the module in your pages:
 
